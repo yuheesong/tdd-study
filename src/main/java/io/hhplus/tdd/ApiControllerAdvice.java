@@ -9,6 +9,19 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 class ApiControllerAdvice extends ResponseEntityExceptionHandler {
     @ExceptionHandler(value = Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception e) {
-        return ResponseEntity.status(500).body(new ErrorResponse("500", "에러가 발생했습니다."));
+        return ResponseEntity.status(500).body(new ErrorResponse("500", e.getMessage()));
     }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException e) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("400", e.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException e) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("400", e.getMessage()));
+    }
+
 }
