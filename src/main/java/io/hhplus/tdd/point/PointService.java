@@ -6,12 +6,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
 public class PointService {
     private final UserPointTable userPointTable;
     private final PointHistoryTable pointHistoryTable;
+    private final Map<Long, Object> userLocks = new ConcurrentHashMap<>();
 
     /**
      * 특정 유저의 포인트를 조회하는 기능
@@ -50,39 +53,41 @@ public class PointService {
             throw new IllegalArgumentException("충전 금액은 0보다 커야 합니다.");
         }
 
-        // 현재 포인트 가져오기
-        UserPoint userPoint = userPointTable.selectById(userId);
+        Object lock = userLocks.computeIfAbsent(userId, id -> new Object());
 
-        // 포인트 계산
-        UserPoint charge = userPoint.charge(amount);
+        synchronized (lock) {
+            UserPoint userPoint = userPointTable.selectById(userId);
 
-        // 충전 후의 포인트 저장
-        UserPoint updated = userPointTable.insertOrUpdate(userId, charge.point());
+            UserPoint charge = userPoint.charge(amount);
+            UserPoint updated = userPointTable.insertOrUpdate(userId, charge.point());
 
-        // 충전 내역 저장
-        pointHistoryTable.insert(userId, amount, TransactionType.CHARGE, updated.updateMillis());
-
-        return updated;
+            pointHistoryTable.insert(userId, amount, TransactionType.CHARGE, updated.updateMillis());
+            return updated;
+        }
     }
 
+    /**
+     * 특정 유저의 포인트를 사용하는 기능
+     */
     public UserPoint use(long userId, long amount) {
         if (amount <= 0) {
             throw new IllegalArgumentException("사용 금액은 0보다 커야 합니다.");
         }
 
-        // 현재 포인트 가져오기
-        UserPoint userPoint = userPointTable.selectById(userId);
+        Object lock = userLocks.computeIfAbsent(userId, id -> new Object());
 
-        // 포인트 사용
-        UserPoint use = userPoint.use(amount);
+        synchronized (lock) {
+            UserPoint userPoint = userPointTable.selectById(userId);
+            if (userPoint.point() < amount) {
+                throw new IllegalStateException("잔액이 부족합니다.");
+            }
 
-        // 차감 후의 포인트 저장
-        UserPoint updated = userPointTable.insertOrUpdate(userId, use.point());
+            UserPoint updated = userPoint.use(amount);
+            userPointTable.insertOrUpdate(userId, updated.point());
+            pointHistoryTable.insert(userId, amount, TransactionType.USE, updated.updateMillis());
 
-        // 사용 내역 저장
-        pointHistoryTable.insert(userId, amount, TransactionType.USE, updated.updateMillis());
-
-        return updated;
+            return updated;
+        }
     }
 
 }
